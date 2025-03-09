@@ -55,10 +55,71 @@ class Mesh {
 
     // Computing the K, M, D matrices per mesh.
     void create_global_matrices(const double timeStep, const double _alpha, const double _beta) {
-        // TODO (change these stubs...)
-        K.resize(currVelocities.size(), currVelocities.size());
-        M = K;
-        D = M;
+        alpha = _alpha;
+        beta = _beta;
+
+        // ----- Calculate K -----
+        K.resize(currPositions.size(), currPositions.size());
+
+        std::vector<Triplet<double>> tripletsK;
+        tripletsK.reserve(T.rows() * 12 * 12);
+
+        double mu = youngModulus / (2.0 * (1.0 + poissonRatio));
+        double lambda = youngModulus * poissonRatio / ((1.0 + poissonRatio) * (1.0 - 2.0 * poissonRatio));
+
+        for (int ti = 0; ti < T.rows(); ti++) {
+            Vector4i tet = T.row(ti);
+
+            Matrix<double, 3, 4> X;
+            for (int i = 0; i < 4; i++) X.col(i) = origPositions.segment(3 * tet(i), 3);
+
+            Matrix3d Dm;
+            for (int i = 0; i < 3; i++) Dm.col(i) = X.col(i + 1) - X.col(0);
+            Matrix3d DmInv = Dm.inverse();
+
+            Matrix<double, 3, 4> B;
+            B.col(0) = -DmInv.col(0) - DmInv.col(1) - DmInv.col(2);
+            for (int i = 1; i < 4; i++) B.col(i) = DmInv.col(i - 1);
+
+            Matrix<double, 12, 12> Ke = Matrix<double, 12, 12>::Zero();
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 4; j++) {
+                    Matrix3d Kij = lambda * B.col(i) * B.col(j).transpose();
+
+                    for (int k = 0; k < 3; k++)
+                        for (int l = 0; l < 3; l++) Kij(k, l) += mu * (B(l, i) * B(k, j) + B(k, i) * B(l, j));
+
+                    Kij *= tetVolumes(ti);
+
+                    for (int k = 0; k < 3; k++)
+                        for (int l = 0; l < 3; l++) Ke(3 * i + k, 3 * j + l) = Kij(k, l);
+                }
+            }
+
+            if (isFixed) continue;
+
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 4; j++)
+                    for (int di = 0; di < 3; di++)
+                        for (int dj = 0; dj < 3; dj++)
+                            tripletsK.push_back(Triplet<double>(3 * tet(i) + di, 3 * tet(j) + dj, Ke(3 * i + di, 3 * j + dj)));
+        }
+
+        K.setFromTriplets(tripletsK.begin(), tripletsK.end());
+
+        // ----- Calculate M -----
+        M.resize(currPositions.size(), currPositions.size());
+
+        vector<Triplet<double>> tripletsM;
+        tripletsM.reserve(currPositions.size());
+
+        for (int i = 0; i < voronoiVolumes.size(); i++)
+            for (int j = 0; j < 3; j++) tripletsM.push_back(Triplet<double>(3 * i + j, 3 * i + j, voronoiVolumes(i) * density));
+
+        M.setFromTriplets(tripletsM.begin(), tripletsM.end());
+
+        // ----- Calculate D -----
+        D = _alpha * M + _beta * K;
     }
 
     // returns center of mass

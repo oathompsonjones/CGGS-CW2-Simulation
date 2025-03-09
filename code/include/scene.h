@@ -57,16 +57,59 @@ class Scene {
     void init_scene(double _timeStep, const double alpha, const double beta) {
         // TODO
         mesh2global();
+
+        timeStep = _timeStep;
+
+        vector<SparseMatrix<double>> Ks, Ms, Ds;
+        for (int i = 0; i < meshes.size(); i++) {
+            meshes[i].create_global_matrices(timeStep, alpha, beta);
+            Ks.push_back(meshes[i].K);
+            Ms.push_back(meshes[i].M);
+            Ds.push_back(meshes[i].D);
+        }
+
+        K = SparseBlockDiagonal(Ks);
+        M = SparseBlockDiagonal(Ms);
+        D = SparseBlockDiagonal(Ds);
+
+        A = M + timeStep * D + timeStep * timeStep * K;
+
+        ASolver.compute(A);
+        ASolver.factorize(A);
+    }
+
+    SparseMatrix<double> SparseBlockDiagonal(vector<SparseMatrix<double>>& blocks) {
+        int totalRows = 0, totalCols = 0;
+        for (const auto& block : blocks) {
+            totalRows += block.rows();
+            totalCols += block.cols();
+        }
+
+        SparseMatrix<double> result(totalRows, totalCols);
+        vector<Triplet<double>> triplets;
+        triplets.reserve(totalRows * totalCols);
+
+        int rowOffset = 0, colOffset = 0;
+        for (const auto& block : blocks) {
+            for (int k = 0; k < block.outerSize(); k++)
+                for (SparseMatrix<double>::InnerIterator it(block, k); it; ++it)
+                    triplets.emplace_back(Triplet<double>(rowOffset + it.row(), colOffset + it.col(), it.value()));
+            rowOffset += block.rows();
+            colOffset += block.cols();
+        }
+        result.setFromTriplets(triplets.begin(), triplets.end());
+
+        return result;
     }
 
     // performing the integration step of the soft body.
     void integrate_global_velocity(double timeStep) {
-        // TODO
+        globalVelocities = ASolver.solve(M * globalVelocities + timeStep * K * (globalPositions - globalOrigPositions));
     }
 
     // Update the current position with the integrated velocity
     void integrate_global_position(double timeStep) {
-        // TODO
+        globalPositions += timeStep * globalVelocities;
     }
 
     void update_scene(double timeStep) {
