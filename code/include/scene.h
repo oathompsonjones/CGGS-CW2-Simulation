@@ -56,55 +56,31 @@ class Scene {
     // This should be called whenever the timestep changes
     void init_scene(double _timeStep, const double alpha, const double beta) {
         // TODO
-        mesh2global();
-
         timeStep = _timeStep;
 
         vector<SparseMatrix<double>> Ks, Ms, Ds;
         for (int i = 0; i < meshes.size(); i++) {
+            if (meshes[i].isFixed) continue;
+            globalPositions.segment(meshes[i].globalOffset, meshes[i].currPositions.size()) << meshes[i].currPositions;
             meshes[i].create_global_matrices(timeStep, alpha, beta);
             Ks.push_back(meshes[i].K);
             Ms.push_back(meshes[i].M);
             Ds.push_back(meshes[i].D);
         }
 
-        K = SparseBlockDiagonal(Ks);
-        M = SparseBlockDiagonal(Ms);
-        D = SparseBlockDiagonal(Ds);
+        sparse_block_diagonal(Ks, K);
+        sparse_block_diagonal(Ms, M);
+        sparse_block_diagonal(Ds, D);
 
         A = M + timeStep * D + timeStep * timeStep * K;
 
-        ASolver.compute(A);
+        ASolver.analyzePattern(A);
         ASolver.factorize(A);
-    }
-
-    SparseMatrix<double> SparseBlockDiagonal(vector<SparseMatrix<double>>& blocks) {
-        int totalRows = 0, totalCols = 0;
-        for (const auto& block : blocks) {
-            totalRows += block.rows();
-            totalCols += block.cols();
-        }
-
-        SparseMatrix<double> result(totalRows, totalCols);
-        vector<Triplet<double>> triplets;
-        triplets.reserve(totalRows * totalCols);
-
-        int rowOffset = 0, colOffset = 0;
-        for (const auto& block : blocks) {
-            for (int k = 0; k < block.outerSize(); k++)
-                for (SparseMatrix<double>::InnerIterator it(block, k); it; ++it)
-                    triplets.emplace_back(Triplet<double>(rowOffset + it.row(), colOffset + it.col(), it.value()));
-            rowOffset += block.rows();
-            colOffset += block.cols();
-        }
-        result.setFromTriplets(triplets.begin(), triplets.end());
-
-        return result;
     }
 
     // performing the integration step of the soft body.
     void integrate_global_velocity(double timeStep) {
-        globalVelocities = ASolver.solve(M * globalVelocities + timeStep * K * (globalPositions - globalOrigPositions));
+        globalVelocities = ASolver.solve(M * globalVelocities - timeStep * K * (globalPositions - globalOrigPositions));
     }
 
     // Update the current position with the integrated velocity
@@ -113,6 +89,7 @@ class Scene {
     }
 
     void update_scene(double timeStep) {
+        mesh2global();
         integrate_global_velocity(timeStep);
         integrate_global_position(timeStep);
         global2Mesh();

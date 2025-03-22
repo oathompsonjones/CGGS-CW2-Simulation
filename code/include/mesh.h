@@ -8,6 +8,7 @@
 
 #include "auxfunctions.h"
 #include "readMESH.h"
+#include "sparse_block_diagonal.h"
 
 using namespace Eigen;
 using namespace std;
@@ -53,72 +54,82 @@ class Mesh {
         return false;
     }
 
-    // Computing the K, M, D matrices per mesh.
-    void create_global_matrices(const double timeStep, const double _alpha, const double _beta) {
-        alpha = _alpha;
-        beta = _beta;
-
-        // ----- Calculate K -----
-        K.resize(currPositions.size(), currPositions.size());
-
-        std::vector<Triplet<double>> tripletsK;
-        tripletsK.reserve(T.rows() * 12 * 12);
-
-        double mu = youngModulus / (2.0 * (1.0 + poissonRatio));
-        double lambda = youngModulus * poissonRatio / ((1.0 + poissonRatio) * (1.0 - 2.0 * poissonRatio));
-
-        for (int ti = 0; ti < T.rows(); ti++) {
-            Vector4i tet = T.row(ti);
-
-            Matrix<double, 3, 4> X;
-            for (int i = 0; i < 4; i++) X.col(i) = origPositions.segment(3 * tet(i), 3);
-
-            Matrix3d Dm;
-            for (int i = 0; i < 3; i++) Dm.col(i) = X.col(i + 1) - X.col(0);
-            Matrix3d DmInv = Dm.inverse();
-
-            Matrix<double, 3, 4> B;
-            B.col(0) = -DmInv.col(0) - DmInv.col(1) - DmInv.col(2);
-            for (int i = 1; i < 4; i++) B.col(i) = DmInv.col(i - 1);
-
-            Matrix<double, 12, 12> Ke = Matrix<double, 12, 12>::Zero();
-            for (int i = 0; i < 4; i++) {
-                for (int j = 0; j < 4; j++) {
-                    Matrix3d Kij = lambda * B.col(i) * B.col(j).transpose();
-
-                    for (int k = 0; k < 3; k++)
-                        for (int l = 0; l < 3; l++) Kij(k, l) += mu * (B(l, i) * B(k, j) + B(k, i) * B(l, j));
-
-                    Kij *= tetVolumes(ti);
-
-                    for (int k = 0; k < 3; k++)
-                        for (int l = 0; l < 3; l++) Ke(3 * i + k, 3 * j + l) = Kij(k, l);
-                }
-            }
-
-            if (isFixed) continue;
-
-            for (int i = 0; i < 4; i++)
-                for (int j = 0; j < 4; j++)
-                    for (int di = 0; di < 3; di++)
-                        for (int dj = 0; dj < 3; dj++)
-                            tripletsK.push_back(Triplet<double>(3 * tet(i) + di, 3 * tet(j) + dj, Ke(3 * i + di, 3 * j + dj)));
-        }
-
-        K.setFromTriplets(tripletsK.begin(), tripletsK.end());
-
-        // ----- Calculate M -----
+    void create_M_matrix(SparseMatrix<double>& M) {
         M.resize(currPositions.size(), currPositions.size());
 
         vector<Triplet<double>> tripletsM;
         tripletsM.reserve(currPositions.size());
 
-        for (int i = 0; i < voronoiVolumes.size(); i++)
-            for (int j = 0; j < 3; j++) tripletsM.push_back(Triplet<double>(3 * i + j, 3 * i + j, voronoiVolumes(i) * density));
+        for (int i = 0; i < voronoiVolumes.size(); i++) {
+            double m = isFixed ? numeric_limits<double>::max() : voronoiVolumes(i) * density;
+            for (int j = 0; j < 3; j++) tripletsM.push_back(Triplet<double>(3 * i + j, 3 * i + j, m));
+        }
 
         M.setFromTriplets(tripletsM.begin(), tripletsM.end());
+    }
 
-        // ----- Calculate D -----
+    void create_K_matrix(SparseMatrix<double>& K) {
+        vector<SparseMatrix<double>> Kes;
+        SparseMatrix<double> Kprime(12 * T.rows(), 12 * T.rows());
+
+        for (int e = 0; e < T.rows(); e++) {
+            Matrix4d Pe;
+            for (int i = 0; i < 4; i++) {
+                Pe(i, 0) = 1.0;
+                for (int j = 0; j < 3; j++) Pe(i, j + 1) = origPositions(3 * T.row(e)(i) + j);
+            }
+
+            Matrix<double, 3, 4> Ge = Pe.inverse().block<3, 4>(1, 0);
+
+            double mu = youngModulus / (2.0 * (1.0 + poissonRatio));
+            double lambda = youngModulus * poissonRatio / ((1.0 + poissonRatio) * (1.0 - 2.0 * poissonRatio));
+
+            Matrix<double, 6, 6> C = Matrix<double, 6, 6>::Zero();
+            for (int i = 0; i < 6; i++) {
+                for (int j = 0; j < 6; j++) {
+                    if (i == j)
+                        C(i, j) = i < 3 ? lambda + 2.0 * mu : mu;
+                    else if (i < 3 && j < 3)
+                        C(i, j) = lambda;
+                }
+            }
+
+            Matrix<double, 6, 12> B = Matrix<double, 6, 12>::Zero();
+            for (int i = 0; i < 4; i++) {
+                for (int j = 0; j < 3; j++) B(j, 3 * i + j) = Ge(j, i);
+
+                B(3, 3 * i + 0) = 0.5 * Ge(1, i);
+                B(3, 3 * i + 1) = 0.5 * Ge(0, i);
+
+                B(4, 3 * i + 1) = 0.5 * Ge(2, i);
+                B(4, 3 * i + 2) = 0.5 * Ge(1, i);
+
+                B(5, 3 * i + 0) = 0.5 * Ge(2, i);
+                B(5, 3 * i + 2) = 0.5 * Ge(0, i);
+            }
+
+            Matrix<double, 12, 12> Ke = B.transpose() * C * B * abs(Pe.determinant()) / 6.0;
+            Kes.push_back(Ke.sparseView());
+        }
+
+        sparse_block_diagonal(Kes, Kprime);
+
+        SparseMatrix<double> Q;
+        vector<Triplet<double>> triplets;
+        triplets.reserve(12 * T.rows());
+        for (int e = 0; e < T.rows(); e++)
+            for (int i = 0; i < 4; i++)
+                for (int j = 0; j < 3; j++) triplets.emplace_back(12 * e + 3 * i + j, 3 * T(e, i) + j, 1.0);
+        Q.resize(12 * T.rows(), origPositions.size());
+        Q.setFromTriplets(triplets.begin(), triplets.end());
+
+        K = Q.transpose() * Kprime * Q;
+    }
+
+    // Computing the K, M, D matrices per mesh.
+    void create_global_matrices(const double timeStep, const double _alpha, const double _beta) {
+        create_K_matrix(K);
+        create_M_matrix(M);
         D = _alpha * M + _beta * K;
     }
 
@@ -138,7 +149,7 @@ class Mesh {
             Vector3d tetCentroid = (origPositions.segment(3 * T(i, 0), 3) + origPositions.segment(3 * T(i, 1), 3) +
                                     origPositions.segment(3 * T(i, 2), 3) + origPositions.segment(3 * T(i, 3), 3)) /
                                    4.0;
-            tetVolumes(i) = std::abs(e01.dot(e02.cross(e03))) / 6.0;
+            tetVolumes(i) = abs(e01.dot(e02.cross(e03))) / 6.0;
             for (int j = 0; j < 4; j++) voronoiVolumes(T(i, j)) += tetVolumes(i) / 4.0;
 
             COM += tetVolumes(i) * tetCentroid;
