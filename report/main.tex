@@ -1,0 +1,41 @@
+% Define the type of document.
+\documentclass[12pt, a4paper]{article}
+
+% Set a more sensible document size.
+\usepackage[margin=0.75in]{geometry}
+
+% Set the language.
+\usepackage[british]{babel}
+    \usepackage{csquotes}
+
+% Prevent words from being split accross lines.
+\tolerance=1\emergencystretch=\maxdimen\hyphenpenalty=10000\hbadness=10000
+
+% Allows images to be included.
+\usepackage{graphicx, animate}
+    \graphicspath{ {./images/} }
+
+% Allow disabling of floating objects.
+\usepackage{float}
+
+% Sets the title.
+\title{Computer Graphics: Geometry and Simulation\\Coursework 2: Simulation}
+\author{Oliver Jones (s2153980)}
+\date{\today}
+
+% Begin the document.
+\begin{document}
+\maketitle
+
+This report makes references to videos, which can be found in the
+    \texttt{videos} directory of the submission.
+The videos are numbered in the order they are referenced in the report.
+
+The code for sections 1 and 2 can be found in the \texttt{section-12} directory
+    of the submission, containing the \texttt{scene.h} and \texttt{mesh.h} files.
+The code for section 3 can be found in the \texttt{section-3} directory,
+    containing the same mesh.h and constraints.h files, with an updated version of
+    the scene.h file.
+All other files from the original codebase remain unchanged.
+
+\end{document}
