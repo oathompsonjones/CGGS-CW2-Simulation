@@ -52,8 +52,12 @@ void callback_function() {
     // pConstraints->updateNodePositions(scene.currConstVertices);
 }
 
-int main() {
-    scene.load_scene("epcot-scene.txt");
+int main(int argc, char* argv[]) {
+    // Get name of scene file
+    string sceneFileName = "epcot-scene.txt";
+    if (argc > 1) sceneFileName = argv[1];
+
+    scene.load_scene(sceneFileName);
     polyscope::init();
 
     scene.init_scene(timeStep, 0.1, 0.1);
