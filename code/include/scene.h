@@ -61,7 +61,7 @@ class Scene {
         vector<SparseMatrix<double>> Ks, Ms, Ds;
         for (int i = 0; i < meshes.size(); i++) {
             if (meshes[i].isFixed) continue;
-            globalPositions.segment(meshes[i].globalOffset, meshes[i].currPositions.size()) << meshes[i].currPositions;
+            globalOrigPositions.segment(meshes[i].globalOffset, meshes[i].origPositions.size()) << meshes[i].origPositions;
             meshes[i].create_global_matrices(timeStep, alpha, beta);
             Ks.push_back(meshes[i].K);
             Ms.push_back(meshes[i].M);
