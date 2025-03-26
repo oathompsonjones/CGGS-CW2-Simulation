@@ -135,7 +135,6 @@ class Mesh {
 
     // returns center of mass
     Vector3d initializeVolumesAndMasses() {
-        // TODO: compute tet volumes and allocate to vertices
         tetVolumes.conservativeResize(T.rows());
         voronoiVolumes.conservativeResize(origPositions.size() / 3);
         voronoiVolumes.setZero();

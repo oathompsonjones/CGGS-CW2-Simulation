@@ -55,7 +55,6 @@ class Scene {
 
     // This should be called whenever the timestep changes
     void init_scene(double _timeStep, const double alpha, const double beta) {
-        // TODO
         timeStep = _timeStep;
 
         vector<SparseMatrix<double>> Ks, Ms, Ds;
