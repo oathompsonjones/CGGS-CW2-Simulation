@@ -1,0 +1,2 @@
+{"rule":"COMMA_PARENTHESIS_WHITESPACE","sentence":"^\\Q.\\E$"}
+{"rule":"POSSESSIVE_APOSTROPHE","sentence":"^\\QThis report makes references to videos, which can be found in the videos directory of the submission.\\E$"}
