@@ -88,7 +88,7 @@ class Mesh {
             for (int i = 0; i < 6; i++) {
                 for (int j = 0; j < 6; j++) {
                     if (i == j)
-                        C(i, j) = i < 3 ? lambda + 2.0 * mu : mu;
+                        C(i, j) = i < 3 ? lambda + 2.0 * mu : 2.0 * mu;
                     else if (i < 3 && j < 3)
                         C(i, j) = lambda;
                 }
